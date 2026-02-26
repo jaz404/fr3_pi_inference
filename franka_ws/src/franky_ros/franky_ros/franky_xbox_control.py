@@ -1,13 +1,14 @@
 import time
 
 import rclpy
-from franky_msgs.msg import CartesianMove, GripperGrasp, GripperMove
+from franky_msgs.msg import CartesianMove, GripperGrasp, GripperMove, JointMove
 from geometry_msgs.msg import Pose, Twist
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import Joy
 from std_msgs.msg import Float64, Float64MultiArray
+import numpy as np
 
 
 class FrankyXboxControl(Node):
@@ -19,10 +20,25 @@ class FrankyXboxControl(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
         )
+        
+        self.demo_start = CartesianMove()
+        self.demo_start.relative = False
+        self.demo_start.pose.position.x, self.demo_start.pose.position.y, self.demo_start.pose.position.z = (
+            float(0.3082970380783081),
+            float(0.007530250586569309),
+            float(0.4771515130996704),
+        )
+        (
+            self.demo_start.pose.orientation.x,
+            self.demo_start.pose.orientation.y,
+            self.demo_start.pose.orientation.z,
+            self.demo_start.pose.orientation.w,
+        ) = [float(v) for v in [1, 0, 0, 0]]
 
         self.pub_cart_pose = self.create_publisher(
             CartesianMove, "fr3/cartesian_pose_cmd", qos_fast
         )
+        self.pub_joint_pos = self.create_publisher(JointMove, "fr3/joint_pos_cmd", 10)
         # self.pub_gripper = self.create_publisher(GripperMove, "fr3/gripper_move", qos_fast)
         self.pub_gripper = self.create_publisher(
             GripperGrasp, "fr3/gripper_grasp", qos_fast
@@ -45,6 +61,11 @@ class FrankyXboxControl(Node):
     def control_loop(self):
         if not self.joy:
             return
+
+        if self.joy.axes[7] == 1.0:
+            self.pub_cart_pose.publish(self.demo_start)
+            return
+
 
         # 1. Cartesian (Left Stick + Bumpers)
         x = self.joy.axes[1] * 0.02  # Left Stick Y -> X
