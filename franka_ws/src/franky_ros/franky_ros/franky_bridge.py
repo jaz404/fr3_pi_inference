@@ -61,9 +61,11 @@ class FrankyRosBridge(Node):
                 else franky.RealtimeConfig.Ignore
             )
             self.robot = franky.Robot(robot_ip, realtime_config=rt_conf)
-            self.robot.relative_dynamics_factor = franky.RelativeDynamicsFactor(
-                velocity=max_vel, acceleration=max_acc, jerk=max_jerk
-            )
+            # BUG: this part does not work as expected but keeping it for now due to nice ros params
+            # self.robot.relative_dynamics_factor = franky.RelativeDynamicsFactor(
+            #     velocity=max_vel, acceleration=max_acc, jerk=max_jerk
+            # )
+            self.robot.relative_dynamics_factor = 0.05
             self.gripper = franky.Gripper(robot_ip)
             self.get_logger().info("Hardware connection established.")
             self.get_logger().info(f"Gripper max width: {self.gripper.max_width}")
@@ -304,8 +306,8 @@ class FrankyRosBridge(Node):
         try:
             self.robot.move(movement, asynchronous=True)
         except Exception as e:
-            self.get_logger().error(f"cartesian pose move failed: {str(e)}")
             self.robot.recover_from_errors()
+            self.get_logger().error(f"cartesian pose move failed: {str(e)}")
 
     def cart_vel_callback(self, msg: CartesianVelocity):
         movement = franky.CartesianVelocityMotion(

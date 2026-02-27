@@ -45,7 +45,7 @@ class FrankyXboxControl(Node):
         )
 
         self.sub_joy = self.create_subscription(Joy, "joy", self.joy_callback, qos_fast)
-        self.create_timer(0.02, self.control_loop)
+        self.create_timer(0.1, self.control_loop)
 
         time.sleep(1.0)
         self.get_logger().info(
@@ -68,14 +68,14 @@ class FrankyXboxControl(Node):
 
 
         # 1. Cartesian (Left Stick + Bumpers)
-        x = self.joy.axes[1] * 0.02  # Left Stick Y -> X
-        y = -self.joy.axes[0] * 0.02  # Left Stick X -> -Y
-        z = (self.joy.buttons[5] - self.joy.buttons[4]) * 0.02  # RB - LB
+        x = self.joy.axes[1] * 0.01  # Left Stick Y -> X
+        y = -self.joy.axes[0] * 0.01  # Left Stick X -> -Y
+        z = (self.joy.buttons[5] - self.joy.buttons[4]) * 0.01  # RB - LB
 
         # 2. Rotation (Right Stick) -> Yaw/Pitch
-        yaw = self.joy.axes[3] * 0.03
-        pitch = self.joy.axes[4] * 0.03
-        roll = (self.joy.buttons[1] - self.joy.buttons[2]) * 0.03  # B(1) - X(2)
+        yaw = self.joy.axes[3] * 0.02
+        pitch = self.joy.axes[4] * 0.02
+        roll = (self.joy.buttons[1] - self.joy.buttons[2]) * 0.02  # B(1) - X(2)
         quat = Rotation.from_euler("xyz", [yaw, pitch, roll], degrees=False).as_quat()
 
         # Publish Move if inputs exist
