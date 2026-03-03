@@ -1,17 +1,17 @@
 services:
-  franka-docker:
-    image: franka-docker:${USER}
+  intervention-learning:
+    image: intervention-learning:${USER}
     build:
       context: .
       dockerfile: Dockerfile.cuda
-    container_name: franka-docker
+    container_name: intervention-learning
     network_mode: "host"
     privileged: true
     command: /bin/bash
     tty: true
     stdin_open: true
     volumes:
-      - ../franka-docker:/home/user/franka-docker
+      - ../CMPUT654-Intervention-Learning:/home/user/intervention-learning
       - /tmp/.X11-unix:/tmp/.X11-unix
       - /etc/udev/rules.d:/etc/udev/rules.d
     environment:

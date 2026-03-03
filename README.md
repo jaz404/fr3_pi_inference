@@ -35,7 +35,7 @@ TODO: fix for robotvision and odin, not just loki
 
 once inside docker container
 ```bash
-cd /home/user/franka-docker
+cd /home/user/intervention-learning
 ```
 
 
@@ -49,7 +49,7 @@ the symlink thing is needed for ros2 to actually update stuff
 
 there is test scripts which you need to unlock for the robot to work. NOTE: make sure to lock when shutting down.
 ```bash
-python3 ~/franka-docker/test_scripts/enable_fci.py
+python3 ~/intervention-learning/test_scripts/enable_fci.py
 ```
 
 to run anything for franka you will probably need to run this

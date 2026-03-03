@@ -98,7 +98,7 @@ RUN echo "export LD_LIBRARY_PATH=/opt/openrobots/lib:$LD_LIBRARY_PATH" >> ~/.bas
 RUN echo "export PYTHONPATH=/opt/openrobots/lib/python3.10/site-packages:$PYTHONPATH" >> ~/.bashrc
 RUN echo "export CMAKE_PREFIX_PATH=/opt/openrobots:$CMAKE_PREFIX_PATH" >> ~/.bashrc
 RUN echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> ~/.bashrc \
-    && echo "source /home/user/franka-docker/franka_ws/install/setup.bash" >> ~/.bashrc \
+    && echo "source /home/user/intervention-learning/franka_ws/install/setup.bash" >> ~/.bashrc \
     && echo "source /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash" >> ~/.bashrc
 RUN echo "alias die='tmux kill-session'" >> ~/.bashrc
 RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' ~/.bashrc

@@ -3,8 +3,8 @@
     "privileged": true,
     // "remoteUser": "root",
     "dockerComposeFile": "../docker-compose.yml",
-    "service": "franka-docker",
-    "workspaceFolder": "/home/user/franka-docker",
+    "service": "intervention-learning",
+    "workspaceFolder": "/home/user/intervention-learning",
     // "initializeCommand": "echo \"USER_UID=$(id -u $USER)\nUSER_GID=$(id -g $USER)\" > .env",
     "customizations": {
         "vscode": {
@@ -28,7 +28,11 @@
                     "/opt/ros/humble/lib/python3.10/site-packages"
                 ],
                 "terminal.integrated.defaultProfile.linux": "bash",
-                "terminal.integrated.profiles.linux": { "bash": { "path": "/bin/bash" } }
+                "terminal.integrated.profiles.linux": {
+                    "bash": {
+                        "path": "/bin/bash"
+                    }
+                }
             }
         }
     }

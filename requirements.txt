@@ -13,3 +13,5 @@ franky-control
 pybind11-stubgen
 scipy
 unzip
+fpsample
+h5py
