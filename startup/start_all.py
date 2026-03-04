@@ -6,7 +6,9 @@ import libtmux
 
 if __name__ == "__main__":
     server = libtmux.Server(
-        config_file=path.expandvars("/home/user/intervention-learning/startup/.tmux.conf")
+        config_file=path.expandvars(
+            "/home/user/intervention-learning/startup/.tmux.conf"
+        )
     )
     if server.has_session("franka"):
         exit()
@@ -22,7 +24,7 @@ if __name__ == "__main__":
         "rviz": "rviz2 -d /home/user/intervention-learning/startup/pc.rviz",
         "franky_bringup": "ros2 launch franky_ros franky_bringup.launch.py",
         "realsense": "ros2 launch realsense_config pointcloud_rs.launch.py",
-        "xbox_control": "ros2 launch franky_ros franky_xbox.launch.py",
+        # "xbox_control": "ros2 launch franky_ros franky_xbox.launch.py",
     }
 
     for name, cmd in terminals.items():

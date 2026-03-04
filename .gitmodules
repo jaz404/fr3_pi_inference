@@ -1,3 +1,8 @@
 [submodule "franka_ws/src/il_recorder"]
 	path = franka_ws/src/il_recorder
 	url = git@github.com:ColeDewis/il_recorder.git
+	
+[submodule "franka_ws/src/franka_flow/franka_flow/HumanScoredFlowMatching"]
+	path = franka_ws/src/franka_flow/franka_flow/HumanScoredFlowMatching
+	url = git@github.com:ColeDewis/HumanScoredFlowMatching.git
+	branch = rtc-and-pc-improvements

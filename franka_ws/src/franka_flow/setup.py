@@ -22,6 +22,6 @@ setup(
         ],
     },
     entry_points={
-        "console_scripts": [],
+        "console_scripts": ["flow_inference_node = franka_flow.franka_inference:main"],
     },
 )

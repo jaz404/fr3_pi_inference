@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 import collections
+import time
 
 import cv_bridge
 import message_filters
 import numpy as np
 import rclpy
 import torch
-from franky_msgs.msg import CartesianMove, GripperGrasp
+from franky_msgs.msg import CartesianMove, GripperGrasp, GripperState
 from geometry_msgs.msg import PoseStamped, Twist, Vector3
 from il_recorder.pointcloud_utils import flat_pc_from_ros, idp3_preprocess_point_cloud
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.signals import SignalHandlerOptions
 from scipy.spatial.transform import Rotation as R
 from sensor_msgs.msg import JointState, PointCloud2
 from sensor_msgs_py import point_cloud2 as pc2
@@ -34,7 +36,7 @@ class FlowInferenceNode(Node):
         super().__init__("flow_inference_node")
 
         # Load model
-        ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/epoch=0300-test_mean_score=-0.047.ckpt"
+        ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/epoch=0300-test_mean_score=-0.015.ckpt"
         self.get_logger().info(f"Loading checkpoint: {ckpt_path}")
 
         self.workspace = TrainDP3Workspace.create_from_checkpoint(ckpt_path)
@@ -52,6 +54,8 @@ class FlowInferenceNode(Node):
 
         # Gripper status
         self.last_gripper_cmd = 0
+        self.last_pos = None
+        self.is_shutting_down = False
 
         # ROS
         cb_group = ReentrantCallbackGroup()
@@ -67,10 +71,15 @@ class FlowInferenceNode(Node):
         self.sub_pts = message_filters.Subscriber(
             self, PointCloud2, "/camera1/depth/color/points"
         )
-        self.sub_joints = message_filters.Subscriber(self, JointState, "/joint_states")
+        self.sub_joints = message_filters.Subscriber(
+            self, JointState, "/fr3/joint_states"
+        )
+        self.sub_gripper = message_filters.Subscriber(
+            self, GripperState, "/fr3/gripper_state"
+        )
 
         self.ts = message_filters.ApproximateTimeSynchronizer(
-            [self.sub_joints, self.sub_pts],
+            [self.sub_joints, self.sub_pts, self.sub_gripper],
             queue_size=2,
             slop=0.1,
             allow_headerless=True,
@@ -79,9 +88,9 @@ class FlowInferenceNode(Node):
 
         # Robot Command
         self.pub_pose = self.create_publisher(
-            CartesianMove, "fr3/cartesian_pose_cmd", 10
+            CartesianMove, "/fr3/cartesian_pose_cmd", 10
         )
-        self.pub_gripper = self.create_publisher(GripperGrasp, "fr3/gripper_grasp", 10)
+        self.pub_gripper = self.create_publisher(GripperGrasp, "/fr3/gripper_grasp", 10)
 
         # --- 4. CONTROL LOOP TIMER ---
         self.timer = self.create_timer(
@@ -111,14 +120,16 @@ class FlowInferenceNode(Node):
 
         self.last_pos = np.concatenate([xyz, rpy])
 
-    def infer_callback(self, joint_msg, pc_msg):
+    def infer_callback(self, joint_msg, pc_msg, gripper_msg):
         # If we have no history, we wait for our current pose to fill with.
         if len(self.action_history) == 0:
             if self.last_pos is not None:
                 self.get_logger().info("Seeding History with Current Pose...")
 
                 for _ in range(HISTORY_LENGTH):
-                    self.action_history.append(self.last_pos.copy())
+                    pos = self.last_pos.copy()
+                    gripper = 0.0 if gripper_msg.width > 0.01 else 1.0  # open vs closed
+                    self.action_history.append(np.concatenate([pos, [gripper]]))
             else:
                 return  # Wait for feedback callback
 
@@ -163,7 +174,7 @@ class FlowInferenceNode(Node):
         # 7. Inference
         with torch.no_grad():
             result = self.workspace.model.predict_action(
-                data, past_actions=past_actions_tensor
+                data["obs"], past_actions=past_actions_tensor
             )
             raw_action_seq = result["action"].squeeze(0).cpu().numpy()
 
@@ -174,7 +185,7 @@ class FlowInferenceNode(Node):
 
         self.action_buffer = []
         gripper_actions = raw_action_seq[HISTORY_LENGTH:, 6]
-        consensus = 1 if torch.mean(gripper_actions) > 0.5 else 0
+        consensus = 1 if np.mean(gripper_actions) > 0.5 else 0
 
         future_actions[:, 6] = consensus
         self.action_buffer.extend(future_actions[:EXECUTION_HORIZON])
@@ -205,10 +216,13 @@ class FlowInferenceNode(Node):
             gripper_msg.epsilon_inner = 0.3
             gripper_msg.epsilon_outer = 0.3
 
+            if not self.is_shutting_down:
+                self.pub_gripper.publish(gripper_msg)
+
         target_msg = CartesianMove()
-        target_msg.pose.position.x = target_pose[0]
-        target_msg.pose.position.y = target_pose[1]
-        target_msg.pose.position.z = target_pose[2]
+        target_msg.pose.position.x = float(target_pose[0])
+        target_msg.pose.position.y = float(target_pose[1])
+        target_msg.pose.position.z = float(target_pose[2])
         rpy = target_pose[3:6]
         rpy = wrap_to_pi(rpy)
         quat = R.from_euler("xyz", rpy).as_quat()
@@ -219,11 +233,39 @@ class FlowInferenceNode(Node):
 
         target_msg.relative = False  # absolute position control
 
-        self.pub_pose.publish(target_msg)
+        self.get_logger().info(
+            "Current Pose: " + ", ".join(f"{x:.3f}" for x in self.last_pos)
+        )
+        self.get_logger().info(
+            "Target Pose: " + ", ".join(f"{x:.3f}" for x in target_pose[:6])
+        )
+
+        if not self.is_shutting_down:
+            self.pub_pose.publish(target_msg)
+
+    def stop_robot(self):
+        # Publish zero velocity command to stop the robot
+        self.is_shutting_down = True
+        stop_msg = CartesianMove()
+        stop_msg.pose.position.x = self.last_pos[0]
+        stop_msg.pose.position.y = self.last_pos[1]
+        stop_msg.pose.position.z = self.last_pos[2]
+        rpy = self.last_pos[3:6]
+        rpy = wrap_to_pi(rpy)
+        quat = R.from_euler("xyz", rpy).as_quat()
+        stop_msg.pose.orientation.x = quat[0]
+        stop_msg.pose.orientation.y = quat[1]
+        stop_msg.pose.orientation.z = quat[2]
+        stop_msg.pose.orientation.w = quat[3]
+
+        stop_msg.relative = False  # absolute position control
+
+        self.get_logger().info("Sending current pose to robot...")
+        self.pub_pose.publish(stop_msg)
 
 
 def main(args=None):
-    rclpy.init(args=args)
+    rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = FlowInferenceNode()
     executor = MultiThreadedExecutor()
     executor.add_node(node)
@@ -234,6 +276,7 @@ def main(args=None):
         node.get_logger().info("Stopping...")
     finally:
         node.stop_robot()
+        time.sleep(1)  # Give some time for the stop command to be sent
         node.destroy_node()
         rclpy.shutdown()
 

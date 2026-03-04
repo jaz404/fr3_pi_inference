@@ -3,7 +3,7 @@ services:
     image: intervention-learning:${USER}
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.cuda
     container_name: intervention-learning
     network_mode: "host"
     privileged: true

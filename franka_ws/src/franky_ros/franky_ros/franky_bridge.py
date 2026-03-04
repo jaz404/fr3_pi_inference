@@ -6,7 +6,6 @@ import panda_py
 import rclpy
 import tf2_ros
 from franky_msgs.msg import (
-    CarteisanTrajectory,
     CartesianMove,
     CartesianVelocity,
     GripperGrasp,

@@ -2,7 +2,7 @@
     "name": "Franka Development Container",
     "privileged": true,
     // "remoteUser": "root",
-    "dockerComposeFile": "../docker-compose.yml",
+    "dockerComposeFile": "../docker-compose-cuda.yml",
     "service": "intervention-learning",
     "workspaceFolder": "/home/user/intervention-learning",
     // "initializeCommand": "echo \"USER_UID=$(id -u $USER)\nUSER_GID=$(id -g $USER)\" > .env",
