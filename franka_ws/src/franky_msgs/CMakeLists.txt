@@ -14,6 +14,7 @@ find_package(std_msgs REQUIRED)
 set(msg_files
   "msg/CartesianMove.msg"
   "msg/CartesianVelocity.msg"
+  "msg/CorrectionInfo.msg"
   "msg/JointMove.msg"
   "msg/JointVelocity.msg"
   "msg/GripperState.msg"

@@ -7,7 +7,7 @@ import message_filters
 import numpy as np
 import rclpy
 import torch
-from franky_msgs.msg import CartesianMove, GripperGrasp, GripperState
+from franky_msgs.msg import CartesianMove, CorrectionInfo, GripperGrasp, GripperState
 from geometry_msgs.msg import PoseStamped, Twist, Vector3
 from il_recorder.pointcloud_utils import flat_pc_from_ros, idp3_preprocess_point_cloud
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -15,16 +15,20 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from scipy.spatial.transform import Rotation as R
-from sensor_msgs.msg import JointState, PointCloud2
+from sensor_msgs.msg import JointState, Joy, PointCloud2
 from sensor_msgs_py import point_cloud2 as pc2
+from std_msgs.msg import Bool
 
 # policy code
 from .HumanScoredFlowMatching.flow_policy.train import TrainDP3Workspace
 
 # --- CONFIGURATION ---
 HISTORY_LENGTH = 2  # How many past steps to condition on (RTC)
-EXECUTION_HORIZON = 8  # How many steps we buffer/execute
+EXECUTION_HORIZON = 6  # How many steps we buffer/execute
 CONTROL_RATE = 5.0  # Hz
+
+MULTIPLE_TAKEOVER = "multiple"
+SINGLE_TAKEOVER = "single"
 
 
 def wrap_to_pi(angle):
@@ -38,8 +42,20 @@ class FlowInferenceNode(Node):
         # Load model
         # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/epoch=0300-test_mean_score=-0.015.ckpt"
         # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/peartabletest_epoch=0300-test_mean_score=-0.025.ckpt"
-        ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/franka_peartable_test-epoch=0180-test_mean_score=-0.037.ckpt"
+        # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/franka_peartable_test-epoch=0180-test_mean_score=-0.037.ckpt"
+        ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/checkpoints/franka_peartable_test60-epoch=0150-test_mean_score=-0.032.ckpt"
+        ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/checkpoints/franka_peartable_test60-epoch=0120-test_mean_score=-0.038.ckpt"
+        ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/checkpoints/franka_peartable_test60-epoch=0180-test_mean_score=-0.030.ckpt"
         self.get_logger().info(f"Loading checkpoint: {ckpt_path}")
+
+        self.declare_parameter(
+            "takeover_type", MULTIPLE_TAKEOVER
+        )  # either single or multiple
+        self.takeover_type = (
+            self.get_parameter("takeover_type").get_parameter_value().string_value
+        )
+        self.user_takeover = False
+        self.is_recording = False
 
         self.workspace = TrainDP3Workspace.create_from_checkpoint(ckpt_path)
         self.workspace.model.eval()
@@ -79,9 +95,22 @@ class FlowInferenceNode(Node):
         self.sub_gripper = message_filters.Subscriber(
             self, GripperState, "/fr3/gripper_state"
         )
+        self.sub_joy = message_filters.Subscriber(self, Joy, "joy")
+        self.sub_is_recording = self.create_subscription(
+            Bool,
+            "is_recording",
+            self.is_recording_callback,
+            10,
+            callback_group=cb_group,
+        )
 
         self.ts = message_filters.ApproximateTimeSynchronizer(
-            [self.sub_joints, self.sub_pts, self.sub_gripper],
+            [
+                self.sub_joints,
+                self.sub_pts,
+                self.sub_gripper,
+                self.sub_joy,
+            ],
             queue_size=2,
             slop=0.1,
             allow_headerless=True,
@@ -93,6 +122,9 @@ class FlowInferenceNode(Node):
             CartesianMove, "/fr3/cartesian_pose_cmd", 10
         )
         self.pub_gripper = self.create_publisher(GripperGrasp, "/fr3/gripper_grasp", 10)
+        self.pub_correction_info = self.create_publisher(
+            CorrectionInfo, "correction_info", 10
+        )
 
         # --- 4. CONTROL LOOP TIMER ---
         self.timer = self.create_timer(
@@ -100,6 +132,10 @@ class FlowInferenceNode(Node):
         )
 
         self.get_logger().info("Flow Inference Node Ready.")
+
+    def is_recording_callback(self, msg: Bool):
+        """Resets buffers when a new recording starts."""
+        self.is_recording = msg.data
 
     def feedback_callback(self, msg: PoseStamped):
         """Updates the robot's current pose."""
@@ -122,7 +158,7 @@ class FlowInferenceNode(Node):
 
         self.last_pos = np.concatenate([xyz, rpy])
 
-    def infer_callback(self, joint_msg, pc_msg, gripper_msg):
+    def infer_callback(self, joint_msg, pc_msg, gripper_msg, joy_msg):
         # If we have no history, we wait for our current pose to fill with.
         if len(self.action_history) == 0:
             if self.last_pos is not None:
@@ -137,6 +173,32 @@ class FlowInferenceNode(Node):
 
         # Skip inference if buffer is full
         if len(self.action_buffer) > 2:
+            return
+
+        triggers = np.array(joy_msg.axes)[[2, 5]]
+        axes = np.array(joy_msg.axes)[[0, 1, 3, 4, 6, 7]]
+
+        self.pub_correction_info.publish(
+            CorrectionInfo(human_takeover=self.user_takeover)
+        )
+
+        # wait until we start demo so we synch up with il recorder code
+        if not self.is_recording:
+            return
+
+        # NOTE: might switch to button switch control but you will also have to send topic to joy to stop that control
+        if np.any(np.abs(axes) > 0.1) or np.any(triggers < 0.9):
+            self.get_logger().info(
+                "Manual control input detected, skipping inference..."
+            )
+            self.user_takeover = True
+            return
+        elif self.user_takeover and self.takeover_type == MULTIPLE_TAKEOVER:
+            self.user_takeover = False
+            self.action_buffer = []
+            self.action_history = collections.deque(maxlen=HISTORY_LENGTH)
+            self.states_deque.clear()
+            self.pcd_deque.clear()
             return
 
         # Get and process point cloud
@@ -193,7 +255,7 @@ class FlowInferenceNode(Node):
         self.action_buffer.extend(future_actions[:EXECUTION_HORIZON])
 
     def control_loop(self):
-        if not self.action_buffer:
+        if not self.action_buffer or self.user_takeover:
             return
 
         # 1. Pop Action
