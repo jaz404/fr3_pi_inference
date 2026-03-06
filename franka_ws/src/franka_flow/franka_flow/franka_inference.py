@@ -24,7 +24,7 @@ from .HumanScoredFlowMatching.flow_policy.train import TrainDP3Workspace
 # --- CONFIGURATION ---
 HISTORY_LENGTH = 2  # How many past steps to condition on (RTC)
 EXECUTION_HORIZON = 8  # How many steps we buffer/execute
-CONTROL_RATE = 15.0  # Hz
+CONTROL_RATE = 5.0  # Hz
 
 
 def wrap_to_pi(angle):
@@ -36,7 +36,9 @@ class FlowInferenceNode(Node):
         super().__init__("flow_inference_node")
 
         # Load model
-        ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/epoch=0300-test_mean_score=-0.015.ckpt"
+        # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/epoch=0300-test_mean_score=-0.015.ckpt"
+        # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/peartabletest_epoch=0300-test_mean_score=-0.025.ckpt"
+        ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/franka_peartable_test-epoch=0180-test_mean_score=-0.037.ckpt"
         self.get_logger().info(f"Loading checkpoint: {ckpt_path}")
 
         self.workspace = TrainDP3Workspace.create_from_checkpoint(ckpt_path)

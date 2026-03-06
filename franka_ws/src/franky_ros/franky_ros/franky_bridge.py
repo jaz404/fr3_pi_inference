@@ -68,6 +68,9 @@ class FrankyRosBridge(Node):
             #     velocity=max_vel, acceleration=max_acc, jerk=max_jerk
             # )
             self.robot.relative_dynamics_factor = 0.05
+            self.get_logger().info(
+                f"DYNAMICS: vel={self.robot.relative_dynamics_factor.velocity}, acc={self.robot.relative_dynamics_factor.acceleration}, jerk={self.robot.relative_dynamics_factor.jerk}"
+            )
             self.gripper = franky.Gripper(robot_ip)
             self.get_logger().info("Hardware connection established.")
             self.get_logger().info(f"Gripper max width: {self.gripper.max_width}")
@@ -312,13 +315,29 @@ class FrankyRosBridge(Node):
             msg.pose.orientation.z,
             msg.pose.orientation.w,
         ]
+
+        # NOTE COLE here we want relative to BASE frame so we have to hack this a bit
+        if msg.relative:
+            pose = self.robot.current_pose.end_effector_pose
+
+            rel_pos = franky.Affine(pos)
+            rel_ori = franky.Affine([0.0, 0.0, 0.0], quat)
+
+            target = rel_pos * pose * rel_ori
+            # self.get_logger().info(
+            #     f"{rel_target.translation=}, {pose.translation=}, {target.translation=}"
+            # )
+        else:
+            target = franky.Affine(pos, quat)
+
         movement = franky.CartesianMotion(
-            franky.Affine(pos, quat),
-            reference_type=(
-                franky.ReferenceType.Relative
-                if msg.relative
-                else franky.ReferenceType.Absolute
-            ),
+            target,
+            # reference_type=(
+            #     franky.ReferenceType.Relative
+            #     if msg.relative
+            #     else franky.ReferenceType.Absolute
+            # ),
+            reference_type=franky.ReferenceType.Absolute,
         )
         try:
             self.robot.move(movement, asynchronous=True)

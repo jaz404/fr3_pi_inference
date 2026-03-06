@@ -84,6 +84,7 @@ RUN echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> ~/.bashrc \
     && echo "source /home/user/intervention-learning/franka_ws/install/setup.bash" >> ~/.bashrc \
     && echo "source /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash" >> ~/.bashrc
 RUN echo "alias die='tmux kill-session'" >> ~/.bashrc
+RUN echo "alias stop='tmux kill-session'" >> ~/.bashrc
 
 # formats terminal to look normal, but with a red (fr3-docker) prefix to indicate docker environment
 RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' ~/.bashrc

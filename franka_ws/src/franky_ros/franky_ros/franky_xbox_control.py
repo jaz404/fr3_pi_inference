@@ -1,5 +1,6 @@
 import time
 
+import numpy as np
 import rclpy
 from franky_msgs.msg import CartesianMove, GripperGrasp, GripperMove, JointMove
 from geometry_msgs.msg import Pose, Twist
@@ -8,7 +9,6 @@ from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import Joy
 from std_msgs.msg import Float64, Float64MultiArray
-import numpy as np
 
 
 class FrankyXboxControl(Node):
@@ -20,10 +20,14 @@ class FrankyXboxControl(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
         )
-        
+
         self.demo_start = CartesianMove()
         self.demo_start.relative = False
-        self.demo_start.pose.position.x, self.demo_start.pose.position.y, self.demo_start.pose.position.z = (
+        (
+            self.demo_start.pose.position.x,
+            self.demo_start.pose.position.y,
+            self.demo_start.pose.position.z,
+        ) = (
             float(0.3082970380783081),
             float(0.007530250586569309),
             float(0.4771515130996704),
@@ -66,16 +70,21 @@ class FrankyXboxControl(Node):
             self.pub_cart_pose.publish(self.demo_start)
             return
 
-
         # 1. Cartesian (Left Stick + Bumpers)
-        x = self.joy.axes[1] * 0.01  # Left Stick Y -> X
-        y = -self.joy.axes[0] * 0.01  # Left Stick X -> -Y
-        z = (self.joy.buttons[5] - self.joy.buttons[4]) * 0.01  # RB - LB
+        x = self.joy.axes[1] * 0.02  # Left Stick Y -> X
+        y = self.joy.axes[0] * 0.02  # Left Stick X -> -Y
+        # z = (self.joy.buttons[5] - self.joy.buttons[4]) * 0.03  # RB - LB
+        z = (self.joy.axes[5] - self.joy.axes[2]) * 0.01  # RB - LB
 
         # 2. Rotation (Right Stick) -> Yaw/Pitch
-        yaw = self.joy.axes[3] * 0.02
-        pitch = self.joy.axes[4] * 0.02
-        roll = (self.joy.buttons[1] - self.joy.buttons[2]) * 0.02  # B(1) - X(2)
+        roll = self.joy.axes[3] * 0.05  # this joint just kinda slow ngl
+        pitch = self.joy.axes[4] * 0.04
+        yaw = (self.joy.buttons[1] - self.joy.buttons[2]) * 0.04  # B(1) - X(2)
+
+        # lock for now
+        pitch = 0
+        yaw = 0
+
         quat = Rotation.from_euler("xyz", [yaw, pitch, roll], degrees=False).as_quat()
 
         # Publish Move if inputs exist
@@ -96,9 +105,12 @@ class FrankyXboxControl(Node):
             self.pub_cart_pose.publish(msg)
 
         # 3. Gripper (Triggers)
-        if self.joy.axes[5] < -0.5:
+        # if self.joy.axes[5] < -0.5:
+
+        if self.joy.buttons[5] == 1:
             grip_width = 0.0
-        elif self.joy.axes[2] < -0.5:
+        # elif self.joy.axes[2] < -0.5:
+        elif self.joy.buttons[4] == 1:
             grip_width = 0.08
         else:
             grip_width = self.grip_width
