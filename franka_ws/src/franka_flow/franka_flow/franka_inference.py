@@ -24,7 +24,7 @@ from .HumanScoredFlowMatching.flow_policy.train import TrainDP3Workspace
 
 # --- CONFIGURATION ---
 HISTORY_LENGTH = 2  # How many past steps to condition on (RTC)
-EXECUTION_HORIZON = 6  # How many steps we buffer/execute
+EXECUTION_HORIZON = 4  # How many steps we buffer/execute
 CONTROL_RATE = 5.0  # Hz
 
 MULTIPLE_TAKEOVER = "multiple"
@@ -43,9 +43,11 @@ class FlowInferenceNode(Node):
         # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/epoch=0300-test_mean_score=-0.015.ckpt"
         # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/peartabletest_epoch=0300-test_mean_score=-0.025.ckpt"
         # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/franka_peartable_test-epoch=0180-test_mean_score=-0.037.ckpt"
-        ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/checkpoints/franka_peartable_test60-epoch=0150-test_mean_score=-0.032.ckpt"
-        ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/checkpoints/franka_peartable_test60-epoch=0120-test_mean_score=-0.038.ckpt"
-        ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/checkpoints/franka_peartable_test60-epoch=0180-test_mean_score=-0.030.ckpt"
+        # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/checkpoints/franka_peartable_test60-epoch=0150-test_mean_score=-0.032.ckpt"
+        # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/checkpoints/franka_peartable_test60-epoch=0120-test_mean_score=-0.038.ckpt"
+        # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/checkpoints/franka_peartable_test60-epoch=0180-test_mean_score=-0.030.ckpt"
+        # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/checkpoints_cart/franka_peartable_test60-epoch=0180-test_mean_score=-0.031.ckpt"
+        ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/checkpoints_cart/franka_peartable_test60-epoch=0210-test_mean_score=-0.026.ckpt"
         self.get_logger().info(f"Loading checkpoint: {ckpt_path}")
 
         self.declare_parameter(
@@ -54,6 +56,15 @@ class FlowInferenceNode(Node):
         self.takeover_type = (
             self.get_parameter("takeover_type").get_parameter_value().string_value
         )
+        self.declare_parameter("doing_corrections", False)
+        self.doing_corrections = (
+            self.get_parameter("doing_corrections").get_parameter_value().bool_value
+        )
+        self.declare_parameter("conditioning_type", "cartesian")  # cartesian, joint
+        self.conditioning_type = (
+            self.get_parameter("conditioning_type").get_parameter_value().string_value
+        )
+
         self.user_takeover = False
         self.is_recording = False
 
@@ -63,7 +74,8 @@ class FlowInferenceNode(Node):
 
         # RTC Buffers
         self.obs_window_size = 2
-        self.states_deque = collections.deque(maxlen=self.obs_window_size)
+        self.jnt_states_deque = collections.deque(maxlen=self.obs_window_size)
+        self.cart_states_deque = collections.deque(maxlen=self.obs_window_size)
         self.pcd_deque = collections.deque(maxlen=self.obs_window_size)
 
         # Action Queues
@@ -95,26 +107,28 @@ class FlowInferenceNode(Node):
         self.sub_gripper = message_filters.Subscriber(
             self, GripperState, "/fr3/gripper_state"
         )
-        self.sub_joy = message_filters.Subscriber(self, Joy, "joy")
-        self.sub_is_recording = self.create_subscription(
-            Bool,
-            "is_recording",
-            self.is_recording_callback,
-            10,
-            callback_group=cb_group,
-        )
+
+        if self.doing_corrections:
+            self.sub_joy = message_filters.Subscriber(self, Joy, "joy")
+            self.sub_is_recording = self.create_subscription(
+                Bool,
+                "is_recording",
+                self.is_recording_callback,
+                10,
+                callback_group=cb_group,
+            )
+
+        connections = [self.sub_joints, self.sub_pts, self.sub_gripper]
+        if self.doing_corrections:
+            connections.append(self.sub_joy)
 
         self.ts = message_filters.ApproximateTimeSynchronizer(
-            [
-                self.sub_joints,
-                self.sub_pts,
-                self.sub_gripper,
-                self.sub_joy,
-            ],
+            connections,
             queue_size=2,
             slop=0.1,
             allow_headerless=True,
         )
+
         self.ts.registerCallback(self.infer_callback)
 
         # Robot Command
@@ -158,7 +172,7 @@ class FlowInferenceNode(Node):
 
         self.last_pos = np.concatenate([xyz, rpy])
 
-    def infer_callback(self, joint_msg, pc_msg, gripper_msg, joy_msg):
+    def infer_callback(self, joint_msg, pc_msg, gripper_msg, joy_msg=None):
         # If we have no history, we wait for our current pose to fill with.
         if len(self.action_history) == 0:
             if self.last_pos is not None:
@@ -175,29 +189,38 @@ class FlowInferenceNode(Node):
         if len(self.action_buffer) > 2:
             return
 
-        triggers = np.array(joy_msg.axes)[[2, 5]]
-        axes = np.array(joy_msg.axes)[[0, 1, 3, 4, 6, 7]]
+        if joy_msg:
+            triggers = np.array(joy_msg.axes)[[2, 5]]
+            axes = np.array(joy_msg.axes)[[0, 1, 3, 4, 6, 7]]
 
-        self.pub_correction_info.publish(
-            CorrectionInfo(human_takeover=self.user_takeover)
-        )
+        if self.doing_corrections:
+            self.pub_correction_info.publish(
+                CorrectionInfo(human_takeover=self.user_takeover)
+            )
 
         # wait until we start demo so we synch up with il recorder code
-        if not self.is_recording:
+        if self.doing_corrections and not self.is_recording:
             return
 
         # NOTE: might switch to button switch control but you will also have to send topic to joy to stop that control
-        if np.any(np.abs(axes) > 0.1) or np.any(triggers < 0.9):
+        if self.doing_corrections and (
+            np.any(np.abs(axes) > 0.1) or np.any(triggers < 0.9)
+        ):
             self.get_logger().info(
                 "Manual control input detected, skipping inference..."
             )
             self.user_takeover = True
             return
-        elif self.user_takeover and self.takeover_type == MULTIPLE_TAKEOVER:
+        elif (
+            self.doing_corrections
+            and self.user_takeover
+            and self.takeover_type == MULTIPLE_TAKEOVER
+        ):
             self.user_takeover = False
             self.action_buffer = []
             self.action_history = collections.deque(maxlen=HISTORY_LENGTH)
-            self.states_deque.clear()
+            self.jnt_states_deque.clear()
+            self.cart_states_deque.clear()
             self.pcd_deque.clear()
             return
 
@@ -212,14 +235,23 @@ class FlowInferenceNode(Node):
         joints = np.array(joint_msg.position[:7], dtype=np.float32)
 
         # NOTE these have maxlen so they will automatically pop old entries
-        self.states_deque.append(joints)
+        self.jnt_states_deque.append(joints)
+        self.cart_states_deque.append(self.last_pos)
         self.pcd_deque.append(pcloud)
 
-        if len(self.states_deque) < self.obs_window_size:
+        if len(self.jnt_states_deque) < self.obs_window_size:
+            return
+        if len(self.cart_states_deque) < self.obs_window_size:
             return
 
         # Prepare Tensors
-        state_input = np.array(self.states_deque)
+        jnt_state_input = np.array(self.jnt_states_deque)
+        cart_state_input = np.array(self.cart_states_deque)
+        state_input = (
+            cart_state_input
+            if self.conditioning_type == "cartesian"
+            else jnt_state_input
+        )
         pc_input = np.array(self.pcd_deque)
 
         data = {
