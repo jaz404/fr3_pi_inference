@@ -27,6 +27,7 @@ setup(
             "franky_bridge = franky_ros.franky_bridge:main",
             "franky_test = franky_ros.franky_test:main",
             "franky_xbox = franky_ros.franky_xbox_control:main",
+            "franky_ps4 = franky_ros.franky_ps4_control:main",
             "home = franky_ros.home:main",
         ],
     },
