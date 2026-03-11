@@ -13,7 +13,6 @@ class FrankyHomeService(Node):
         super().__init__("franky_home_server")
 
         self.pub_joint_pos = self.create_publisher(JointMove, "fr3/joint_pos_cmd", 10)
-        # self.pub_gripper = self.create_publisher(GripperGrasp, "fr3/gripper_grasp", 10)
         self.pub_gripper = self.create_publisher(GripperMove, "fr3/gripper_move", 10)
         self.join_motion_pub = self.create_publisher(Empty, "fr3/join_motion", 10)
 
