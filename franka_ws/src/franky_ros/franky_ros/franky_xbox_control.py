@@ -9,6 +9,7 @@ from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import Joy
 from std_msgs.msg import Float64, Float64MultiArray
+from franky_msgs.srv import GoHome
 
 
 class FrankyXboxControl(Node):
@@ -21,23 +22,9 @@ class FrankyXboxControl(Node):
             depth=1,
         )
 
-        self.demo_start = CartesianMove()
-        self.demo_start.relative = False
-        (
-            self.demo_start.pose.position.x,
-            self.demo_start.pose.position.y,
-            self.demo_start.pose.position.z,
-        ) = (
-            float(0.3082970380783081),
-            float(0.007530250586569309),
-            float(0.4771515130996704),
-        )
-        (
-            self.demo_start.pose.orientation.x,
-            self.demo_start.pose.orientation.y,
-            self.demo_start.pose.orientation.z,
-            self.demo_start.pose.orientation.w,
-        ) = [float(v) for v in [1, 0, 0, 0]]
+        self.cli_home = self.create_client(GoHome, 'go_home')
+        while not self.cli_home.wait_for_service(timeout_sec=1.0):
+            pass
 
         self.pub_cart_pose = self.create_publisher(
             CartesianMove, "fr3/cartesian_pose_cmd", qos_fast
@@ -67,8 +54,9 @@ class FrankyXboxControl(Node):
             return
 
         if self.joy.axes[7] == 1.0:
-            self.pub_cart_pose.publish(self.demo_start)
-            return
+            # this will actually block our xbox control so we dont need to do anything with future
+            # but might want to make this a little more logical
+            self.cli_home.call_async(GoHome.Request())
 
         # 1. Cartesian (Left Stick + Bumpers)
         x = self.joy.axes[1] * 0.02  # Left Stick Y -> X

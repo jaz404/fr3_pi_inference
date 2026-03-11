@@ -50,6 +50,14 @@ def generate_launch_description():
         output="screen",
     )
 
+    franky_home = Node(
+        package="franky_ros",  # Ensure this matches your package name in setup.py
+        executable="home",
+        name="franky_home_service",
+        parameters=[],
+        output="screen",
+    )
+
     return LaunchDescription(
         [
             robot_ip_arg,
@@ -58,5 +66,6 @@ def generate_launch_description():
             accel_limit_arg,
             jerk_limit_arg,
             franky_ros,
+            franky_home
         ]
     )

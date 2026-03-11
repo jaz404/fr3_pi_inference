@@ -28,6 +28,7 @@ set(srv_files
   "srv/BlockingJointMove.srv"
   "srv/BlockingGripperMove.srv"
   "srv/BlockingGripperGrasp.srv"
+  "srv/GoHome.srv"
 )
 
 # set(action_files

@@ -1,53 +1,55 @@
 import time
 
 import rclpy
-from franky_msgs.msg import CartesianMove, GripperGrasp
+from franky_msgs.msg import GripperMove, JointMove, JointVelocity, GripperGrasp
+from franky_msgs.srv import GoHome
+from geometry_msgs.msg import Pose, Twist
 from rclpy.node import Node
+from std_msgs.msg import Float64, Float64MultiArray, Empty
 
-
-class FrankyTestClient(Node):
+# BUG: this service sometimes doesent startup if you initiate franka and need to press button. so just rerun everythign
+class FrankyHomeService(Node):
     def __init__(self):
-        super().__init__("franky_home")
+        super().__init__("franky_home_server")
 
-        home = CartesianMove()
-        home.relative = False
-        home.pose.position.x, home.pose.position.y, home.pose.position.z = (
-            float(0.3082970380783081),
-            float(0.007530250586569309),
-            float(0.4771515130996704),
-        )
-        (
-            home.pose.orientation.x,
-            home.pose.orientation.y,
-            home.pose.orientation.z,
-            home.pose.orientation.w,
-        ) = [float(v) for v in [1, 0, 0, 0]]
+        self.pub_joint_pos = self.create_publisher(JointMove, "fr3/joint_pos_cmd", 10)
+        # self.pub_gripper = self.create_publisher(GripperGrasp, "fr3/gripper_grasp", 10)
+        self.pub_gripper = self.create_publisher(GripperMove, "fr3/gripper_move", 10)
+        self.join_motion_pub = self.create_publisher(Empty, "fr3/join_motion", 10)
 
-        g_msg = GripperGrasp()
-        g_msg.width = 0.08
-        g_msg.speed = 0.1
-        g_msg.force = 0.01
-        g_msg.epsilon_inner = 0.3
-        g_msg.epsilon_outer = 0.3
+        self.srv = self.create_service(GoHome, 'go_home', self.go_home)
 
-        self.pub_joint_pos = self.create_publisher(
-            CartesianMove, "fr3/cartesian_pose_cmd", 10
-        )
-        self.pub_gripper = self.create_publisher(GripperGrasp, "fr3/gripper_grasp", 10)
+        time.sleep(1.0)
 
-        self.get_logger().info("Sending Home Position Command...")
-        self.pub_gripper.publish(g_msg)
-        self.pub_joint_pos.publish(home)
+    def go_home(self, request, response):
+        self.join_motion_pub.publish(Empty())
+
+        j_msg = JointMove()
+        j_msg.positions = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785]
+        j_msg.relative = False
+        
+        self.get_logger().info("Franky go home")
+        self.pub_joint_pos.publish(j_msg)
+
+        msg = GripperMove()
+        msg.width = 0.08
+        msg.speed = 0.05
+        self.pub_gripper.publish(msg)
+
+        response.success = True
+
+        return response
 
 
 def main(args=None):
     rclpy.init(args=args)
-    tester = FrankyTestClient()
-    # Keep alive briefly to ensure message delivery
-    time.sleep(1.0)
-    tester.destroy_node()
+    server = FrankyHomeService()
+
+    rclpy.spin(server)
+
     rclpy.shutdown()
 
 
 if __name__ == "__main__":
     main()
+
