@@ -75,6 +75,7 @@ class FlowInferenceNode(Node):
         # RTC Buffers
         self.obs_window_size = 2
         self.jnt_states_deque = collections.deque(maxlen=self.obs_window_size)
+        self.gripper_deque = collections.deque(maxlen=self.obs_window_size)
         self.cart_states_deque = collections.deque(maxlen=self.obs_window_size)
         self.pcd_deque = collections.deque(maxlen=self.obs_window_size)
 
@@ -180,7 +181,7 @@ class FlowInferenceNode(Node):
 
                 for _ in range(HISTORY_LENGTH):
                     pos = self.last_pos.copy()
-                    gripper = 0.0 if gripper_msg.width > 0.01 else 1.0  # open vs closed
+                    gripper = 0.0 if gripper_msg.width > 0.07 else 1.0  # open vs closed
                     self.action_history.append(np.concatenate([pos, [gripper]]))
             else:
                 return  # Wait for feedback callback
@@ -220,6 +221,7 @@ class FlowInferenceNode(Node):
             self.action_buffer = []
             self.action_history = collections.deque(maxlen=HISTORY_LENGTH)
             self.jnt_states_deque.clear()
+            self.gripper_deque.clear()
             self.cart_states_deque.clear()
             self.pcd_deque.clear()
             return
@@ -230,12 +232,13 @@ class FlowInferenceNode(Node):
             pcloud, num_points=4096, near=0.1, far=1.5
         )  # TODO confirm near, far
 
-        # gripper_pos = 0.0 if joint_msg.position[7] < 0.1 else 1.0
+        gripper = 0.0 if gripper_msg.width > 0.07 else 1.0  # open vs closed
         # joints = np.concatenate([joint_msg.position[:7], [gripper_pos]])
         joints = np.array(joint_msg.position[:7], dtype=np.float32)
 
         # NOTE these have maxlen so they will automatically pop old entries
         self.jnt_states_deque.append(joints)
+        self.gripper_deque.append(joints)
         self.cart_states_deque.append(self.last_pos)
         self.pcd_deque.append(pcloud)
 
@@ -246,11 +249,12 @@ class FlowInferenceNode(Node):
 
         # Prepare Tensors
         jnt_state_input = np.array(self.jnt_states_deque)
+        gripper_input = np.array(gripper)
         cart_state_input = np.array(self.cart_states_deque)
         state_input = (
-            cart_state_input
+                np.concatenate([cart_state_input, gripper_input[:,np.newaxis]])
             if self.conditioning_type == "cartesian"
-            else jnt_state_input
+            else np.concatenate([jnt_state_input, gripper_input[:,np.newaxis]])
         )
         pc_input = np.array(self.pcd_deque)
 
