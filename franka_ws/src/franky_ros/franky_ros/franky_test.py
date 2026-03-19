@@ -66,10 +66,7 @@ def main(args=None):
     # tester.send_joint_velocity([0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     # time.sleep(3.0)
     # tester.send_joint_velocity([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-    # tester.send_gripper_move(0.08)  # Open halfway
-    # tester.send_gripper_move(0.0)  # Open halfway
-
-    tester.send_gripper_grasp(0.0)  # Open halfway
+    tester.send_gripper_move(0.08)  # Open halfway
 
     # Keep alive briefly to ensure message delivery
     time.sleep(1.0)

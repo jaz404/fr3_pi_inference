@@ -22,6 +22,11 @@ def generate_launch_description():
         default_value="single",
         description="Type of takeover strategy (single or multiple)",
     )
+    obs_type_arg = DeclareLaunchArgument(
+        "obs_type",
+        default_value="pointcloud",
+        description="observation type (pointcloud or image)",
+    )
 
     # Define the node
     franky_ros = Node(
@@ -32,6 +37,7 @@ def generate_launch_description():
             {
                 "doing_corrections": LaunchConfiguration("doing_corrections"),
                 "takeover_type": LaunchConfiguration("takeover_type"),
+                "obs_type": LaunchConfiguration("obs_type"),
                 "conditioning_type": LaunchConfiguration("conditioning_type"),
             }
         ],
@@ -43,6 +49,7 @@ def generate_launch_description():
             doing_corrections_arg,
             conditioning_type_arg,
             takeover_type_arg,
+            obs_type_arg,
             franky_ros,
         ]
     )

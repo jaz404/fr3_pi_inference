@@ -25,8 +25,8 @@ if __name__ == "__main__":
         "franky_bringup": "ros2 launch franky_ros franky_bringup.launch.py",
         "realsense": "ros2 launch realsense_config pointcloud_rs.launch.py",
         # "xbox_control": "ros2 launch franky_ros franky_xbox.launch.py",
-        "ps4_control": "ros2 launch franky_ros franky_ps4.launch.py",
-        "recorder": "ros2 launch il_recorder record.launch.py",
+        # "ps4_control": "ros2 launch franky_ros franky_ps4.launch.py",
+        # "recorder": "ros2 launch il_recorder record.launch.py",
     }
 
     for name, cmd in terminals.items():

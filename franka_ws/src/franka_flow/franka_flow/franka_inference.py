@@ -2,6 +2,7 @@
 import collections
 import time
 
+import cv2
 import cv_bridge
 import message_filters
 import numpy as np
@@ -21,7 +22,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
 from scipy.spatial.transform import Rotation as R
-from sensor_msgs.msg import JointState, Joy, PointCloud2
+from sensor_msgs.msg import Image, JointState, Joy, PointCloud2
 from sensor_msgs_py import point_cloud2 as pc2
 from std_msgs.msg import Bool
 
@@ -72,6 +73,10 @@ class FlowInferenceNode(Node):
         self.conditioning_type = (
             self.get_parameter("conditioning_type").get_parameter_value().string_value
         )
+        self.declare_parameter("obs_type", "pointcloud")
+        self.obs_type = (
+            self.get_parameter("obs_type").get_parameter_value().string_value
+        )
 
         self.user_takeover = False
         self.is_recording = False
@@ -86,6 +91,7 @@ class FlowInferenceNode(Node):
         self.gripper_deque = collections.deque(maxlen=self.obs_window_size)
         self.cart_states_deque = collections.deque(maxlen=self.obs_window_size)
         self.pcd_deque = collections.deque(maxlen=self.obs_window_size)
+        self.img_deque = collections.deque(maxlen=self.obs_window_size)
 
         # Action Queues
         self.action_buffer = []
@@ -110,6 +116,9 @@ class FlowInferenceNode(Node):
         self.sub_pts = message_filters.Subscriber(
             self, PointCloud2, "/camera1/depth/color/points"
         )
+        self.sub_img = message_filters.Subscriber(
+            self, Image, "/camera1/color/image_raw"
+        )
         self.sub_joints = message_filters.Subscriber(
             self, JointState, "/fr3/joint_states"
         )
@@ -127,7 +136,8 @@ class FlowInferenceNode(Node):
                 callback_group=cb_group,
             )
 
-        connections = [self.sub_joints, self.sub_pts, self.sub_gripper]
+        connections = [self.sub_joints, self.sub_gripper, self.sub_pts, self.sub_img]
+
         if self.doing_corrections:
             connections.append(self.sub_joy)
 
@@ -184,7 +194,7 @@ class FlowInferenceNode(Node):
 
         self.last_pos = np.concatenate([xyz, rpy])
 
-    def infer_callback(self, joint_msg, pc_msg, gripper_msg, joy_msg=None):
+    def infer_callback(self, joint_msg, gripper_msg, pc_msg, img_msg, joy_msg=None):
         # If we have no history, we wait for our current pose to fill with.
         if len(self.action_history) == 0:
             if self.last_pos is not None:
@@ -200,6 +210,8 @@ class FlowInferenceNode(Node):
         # Skip inference if buffer is full
         if len(self.action_buffer) > 2:
             return
+
+        gripper = 0.0 if gripper_msg.width > 0.07 else 1.0  # open vs closed
 
         if joy_msg:
             # triggers = np.array(joy_msg.axes)[[2, 5]] # xbox
@@ -245,6 +257,13 @@ class FlowInferenceNode(Node):
             pcloud, num_points=4096, near=0.1, far=1.5
         )  # TODO confirm near, far
 
+        # Process images
+        img_1d = np.frombuffer(img_msg.data, dtype=np.uint8).copy()
+        cv_img = img_1d.reshape((img_msg.height, img_msg.width, 3))
+        if "rgb" in img_msg.encoding.lower():
+            cv_img = cv2.cvtColor(cv_img, cv2.COLOR_RGB2BGR)
+        cv_img = cv2.resize(cv_img, (84, 84), interpolation=cv2.INTER_AREA)
+
         gripper = 0.0 if gripper_msg.width > 0.07 else 1.0  # open vs closed
         # joints = np.concatenate([joint_msg.position[:7], [gripper_pos]])
         joints = np.array(joint_msg.position[:7], dtype=np.float32)
@@ -254,6 +273,7 @@ class FlowInferenceNode(Node):
         self.gripper_deque.append(gripper)
         self.cart_states_deque.append(self.last_pos)
         self.pcd_deque.append(pcloud)
+        self.img_deque.append(cv_img)
 
         if len(self.jnt_states_deque) < self.obs_window_size:
             return
@@ -264,19 +284,28 @@ class FlowInferenceNode(Node):
         jnt_state_input = np.array(self.jnt_states_deque)
         gripper_input = np.array(self.gripper_deque)[:, np.newaxis]
         cart_state_input = np.array(self.cart_states_deque)
+        gripper_input = np.array(self.gripper_deque)[:, np.newaxis]
+        self.get_logger().info(f"{cart_state_input} {gripper_input}")
         state_input = (
             np.concatenate([cart_state_input, gripper_input], axis=1)
             if self.conditioning_type == "cartesian"
             else np.concatenate([jnt_state_input, gripper_input], axis=1)
         )
         pc_input = np.array(self.pcd_deque)
+        img_input = np.array(self.img_deque).transpose(0, 3, 1, 2)
 
         data = {
             "obs": {
                 "agent_pos": torch.from_numpy(state_input).unsqueeze(0).cuda().float(),
-                "point_cloud": torch.from_numpy(pc_input).unsqueeze(0).cuda().float(),
+                # "point_cloud": torch.from_numpy(pc_input).unsqueeze(0).cuda().float(),
             }
         }
+        if self.obs_type == "pointcloud":
+            data["obs"]["point_cloud"] = (
+                torch.from_numpy(pc_input).unsqueeze(0).cuda().float()
+            )
+        else:
+            data["obs"]["img"] = torch.from_numpy(img_input).unsqueeze(0).cuda().float()
 
         # 6. Condition on History (RTC)
         past_actions_arr = np.array(self.action_history)
