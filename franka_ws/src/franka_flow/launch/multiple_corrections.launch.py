@@ -24,8 +24,13 @@ def generate_launch_description():
     )
     obs_type_arg = DeclareLaunchArgument(
         "obs_type",
-        default_value="pointcloud",
+        default_value="image",
         description="observation type (pointcloud or image)",
+    )
+    ckpt_path_arg = DeclareLaunchArgument(
+        "ckpt_path",
+        default_value="",
+        description="Path to the checkpoint file for the model",
     )
 
     # Define the node
@@ -39,6 +44,7 @@ def generate_launch_description():
                 "takeover_type": LaunchConfiguration("takeover_type"),
                 "obs_type": LaunchConfiguration("obs_type"),
                 "conditioning_type": LaunchConfiguration("conditioning_type"),
+                "ckpt_path": LaunchConfiguration("ckpt_path"),
             }
         ],
         output="screen",
@@ -50,6 +56,7 @@ def generate_launch_description():
             conditioning_type_arg,
             takeover_type_arg,
             obs_type_arg,
+            ckpt_path_arg,
             franky_ros,
         ]
     )

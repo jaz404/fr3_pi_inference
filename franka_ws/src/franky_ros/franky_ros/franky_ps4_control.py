@@ -2,7 +2,13 @@ import time
 
 import numpy as np
 import rclpy
-from franky_msgs.msg import CartesianMove, GripperGrasp, GripperMove, JointMove
+from franky_msgs.msg import (
+    CartesianMove,
+    GripperGrasp,
+    GripperMove,
+    GripperState,
+    JointMove,
+)
 from franky_msgs.srv import GoHome
 from geometry_msgs.msg import Pose, Twist
 from rclpy.node import Node
@@ -36,6 +42,9 @@ class FrankyPs4Control(Node):
         self.pub_gripper = self.create_publisher(
             GripperGrasp, "fr3/gripper_grasp", qos_fast
         )
+        self.sub_gripper = self.create_subscription(
+            GripperState, "/fr3/gripper_state", self.grip_callback, qos_fast
+        )
 
         self.sub_joy = self.create_subscription(Joy, "joy", self.joy_callback, qos_fast)
         self.create_timer(0.1, self.control_loop)
@@ -50,6 +59,9 @@ class FrankyPs4Control(Node):
 
     def joy_callback(self, msg):
         self.joy = msg
+
+    def grip_callback(self, grip_msg):
+        self.grip_width = 0.08 if grip_msg.width > 0.07 else 0.0
 
     def control_loop(self):
         if not self.joy:
@@ -74,6 +86,8 @@ class FrankyPs4Control(Node):
         # lock for now
         pitch = 0
         yaw = 0
+
+        self.get_logger().info(f"{x:3f} {y:3f} {z:3f} | {yaw:3f} {pitch:3f} {roll:3f}")
 
         quat = Rotation.from_euler("xyz", [yaw, pitch, roll], degrees=False).as_quat()
 
@@ -115,7 +129,7 @@ class FrankyPs4Control(Node):
                 self.pub_gripper_move.publish(g_msg)
             else:
                 g_msg = GripperGrasp()
-                g_msg.width = float(grip_width)
+                g_msg.width = 0.0
                 g_msg.speed = 0.1
                 g_msg.force = 5.0
                 g_msg.epsilon_inner = 0.0

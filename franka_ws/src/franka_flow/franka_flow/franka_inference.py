@@ -31,7 +31,7 @@ from .HumanScoredFlowMatching.flow_policy.train import TrainDP3Workspace
 
 # --- CONFIGURATION ---
 HISTORY_LENGTH = 2  # How many past steps to condition on (RTC)
-EXECUTION_HORIZON = 4  # How many steps we buffer/execute
+EXECUTION_HORIZON = 3  # How many steps we buffer/execute
 CONTROL_RATE = 5.0  # Hz
 
 MULTIPLE_TAKEOVER = "multiple"
@@ -55,10 +55,19 @@ class FlowInferenceNode(Node):
         # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/checkpoints/franka_peartable_test60-epoch=0180-test_mean_score=-0.030.ckpt"
         # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/checkpoints_cart/franka_peartable_test60-epoch=0180-test_mean_score=-0.031.ckpt"
 
-        ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/siriusrgb/franka_banana_rgb-epoch=0160-test_mean_score=-0.037.ckpt"
+        # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/siriusrgb/franka_banana_rgb-epoch=0160-test_mean_score=-0.037.ckpt"
         # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/imgpolicy/franka_banana_rgb_30-epoch=0160-test_mean_score=-0.044.ckpt"
         # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/imgpolicy/franka_banana_rgb_40-epoch=0160-test_mean_score=-0.043.ckpt"
         # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/imgpolicy/franka_banana_rgb_50-epoch=0160-test_mean_score=-0.039.ckpt"
+        # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/USER_STUDY/cole/franka_banana_rgb_new-epoch=0160-test_mean_score=-0.035.ckpt"
+        # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/USER_STUDY/base.ckpt"
+        ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/USER_STUDY/cole/multiple/round1.ckpt"
+        self.declare_parameter("ckpt_path", "")
+        ckpt_path_arg = (
+            self.get_parameter("ckpt_path").get_parameter_value().string_value
+        )
+        ckpt_path = ckpt_path_arg if ckpt_path_arg else ckpt_path
+
         self.get_logger().info(f"Loading checkpoint: {ckpt_path}")
 
         self.declare_parameter(
@@ -210,17 +219,39 @@ class FlowInferenceNode(Node):
             else:
                 return  # Wait for feedback callback
 
-        # Skip inference if buffer is full
-        if len(self.action_buffer) > 2:
-            return
-
         gripper = 0.0 if gripper_msg.width > 0.07 else 1.0  # open vs closed
 
-        if joy_msg:
+        if joy_msg and self.doing_corrections:
             # triggers = np.array(joy_msg.axes)[[2, 5]] # xbox
             triggers = np.array(joy_msg.axes)[[4, 5]]  # ps4
             # axes = np.array(joy_msg.axes)[[0, 1, 3, 4, 6, 7]] # xbox
             axes = np.array(joy_msg.axes)[[0, 1, 2, 3]]  # ps4
+            on_toggle = joy_msg.buttons[0] == 1.0  # A button for xbox, X button for ps4
+            off_toggle = (
+                joy_msg.buttons[1] == 1.0
+            )  # B button for xbox, Circle button for ps4
+
+            # self.get_logger().info(f"On Toggle: {on_toggle}, Off Toggle: {off_toggle}")
+
+            if on_toggle:
+                self.user_takeover = True
+                self.get_logger().info("User Takeover Activated")
+                return
+            elif (
+                self.user_takeover
+                and self.takeover_type == MULTIPLE_TAKEOVER
+                and off_toggle
+            ):
+                self.get_logger().info("User Takeover Stopped")
+
+                self.user_takeover = False
+                self.action_buffer = []
+                self.action_history = collections.deque(maxlen=HISTORY_LENGTH)
+                self.jnt_states_deque.clear()
+                self.gripper_deque.clear()
+                self.cart_states_deque.clear()
+                self.pcd_deque.clear()
+                return
 
         if self.doing_corrections:
             self.pub_correction_info.publish(
@@ -231,28 +262,32 @@ class FlowInferenceNode(Node):
         if self.doing_corrections and not self.is_recording:
             return
 
+        # Skip inference if buffer is full
+        if len(self.action_buffer) > 2:
+            return
+
         # NOTE: might switch to button switch control but you will also have to send topic to joy to stop that control
-        if self.doing_corrections and (
-            np.any(np.abs(axes) > 0.1) or np.any(triggers < 0.9)
-        ):
-            self.get_logger().info(
-                "Manual control input detected, skipping inference..."
-            )
-            self.user_takeover = True
-            return
-        elif (
-            self.doing_corrections
-            and self.user_takeover
-            and self.takeover_type == MULTIPLE_TAKEOVER
-        ):
-            self.user_takeover = False
-            self.action_buffer = []
-            self.action_history = collections.deque(maxlen=HISTORY_LENGTH)
-            self.jnt_states_deque.clear()
-            self.gripper_deque.clear()
-            self.cart_states_deque.clear()
-            self.pcd_deque.clear()
-            return
+        # if self.doing_corrections and (
+        #     np.any(np.abs(axes) > 0.1) or np.any(triggers < 0.9)
+        # ):
+        #     self.get_logger().info(
+        #         f"Manual control input detected, skipping inference... {axes} {triggers}"
+        #     )
+        #     self.user_takeover = True
+        #     return
+        # elif (
+        #     self.doing_corrections
+        #     and self.user_takeover
+        #     and self.takeover_type == MULTIPLE_TAKEOVER
+        # ):
+        #     self.user_takeover = False
+        #     self.action_buffer = []
+        #     self.action_history = collections.deque(maxlen=HISTORY_LENGTH)
+        #     self.jnt_states_deque.clear()
+        #     self.gripper_deque.clear()
+        #     self.cart_states_deque.clear()
+        #     self.pcd_deque.clear()
+        #     return
 
         # Get and process point cloud
         pcloud = flat_pc_from_ros(pc_msg, remove_nans=True)
@@ -330,7 +365,7 @@ class FlowInferenceNode(Node):
 
         self.action_buffer = []
         gripper_actions = raw_action_seq[HISTORY_LENGTH:, 6]
-        consensus = 1 if np.mean(gripper_actions) > 0.3 else 0
+        consensus = 1 if np.mean(gripper_actions) > 0.5 else 0
 
         self.get_logger().info(f"{np.mean(gripper_actions)}, {consensus=}")
 
