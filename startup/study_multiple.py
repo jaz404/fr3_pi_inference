@@ -45,6 +45,7 @@ if __name__ == "__main__":
         # "xbox_control": "ros2 launch franky_ros franky_xbox.launch.py",
         "ps4_control": "ros2 launch franky_ros franky_ps4.launch.py",
         "recorder": f"ros2 launch il_recorder record.launch.py save_dir:=data/{user_id}/{PROTOCOL}/round{round} robot:=fr3_takeover.yaml",
+        "keyboard_control": "ros2 run il_recorder keyboard_joy",
     }
 
     for name, cmd in terminals.items():

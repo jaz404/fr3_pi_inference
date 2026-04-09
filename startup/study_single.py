@@ -37,7 +37,7 @@ if __name__ == "__main__":
     # terminals for the simulation to start
 
     terminals = {
-        "policy": f"ros2 launch franka_flow multiple_corrections.launch.py ckpt_path:={checkpoint}",
+        "policy": f"ros2 launch franka_flow single_corrections.launch.py ckpt_path:={checkpoint}",
         "rqt": "rqt --perspective-file /home/user/intervention-learning/startup/default.perspective",
         "rviz": "rviz2 -d /home/user/intervention-learning/startup/pc.rviz",
         "franky_bringup": "ros2 launch franky_ros franky_bringup.launch.py",
@@ -45,6 +45,7 @@ if __name__ == "__main__":
         # "xbox_control": "ros2 launch franky_ros franky_xbox.launch.py",
         "ps4_control": "ros2 launch franky_ros franky_ps4.launch.py",
         "recorder": f"ros2 launch il_recorder record.launch.py save_dir:=data/{user_id}/{PROTOCOL}/round{round} robot:=fr3_takeover.yaml",
+        "keyboard_control": "ros2 run il_recorder keyboard_joy",
     }
 
     for name, cmd in terminals.items():

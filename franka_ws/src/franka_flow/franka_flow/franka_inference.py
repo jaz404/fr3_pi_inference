@@ -61,7 +61,14 @@ class FlowInferenceNode(Node):
         # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/imgpolicy/franka_banana_rgb_50-epoch=0160-test_mean_score=-0.039.ckpt"
         # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/USER_STUDY/cole/franka_banana_rgb_new-epoch=0160-test_mean_score=-0.035.ckpt"
         # ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/USER_STUDY/base.ckpt"
-        ckpt_path = "/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/USER_STUDY/cole/multiple/round1.ckpt"
+
+        # shorthands for eval
+        USER = "tanner"
+        # ckpt_path = f"/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/USER_STUDY/{USER}/single/round1.ckpt"
+        # ckpt_path = f"/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/USER_STUDY/{USER}/single/round2.ckpt"
+        ckpt_path = f"/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/USER_STUDY/{USER}/multiple/round1.ckpt"
+        # ckpt_path = f"/home/user/intervention-learning/franka_ws/src/franka_flow/ckpts/USER_STUDY/{USER}/multiple/round2.ckpt"
+
         self.declare_parameter("ckpt_path", "")
         ckpt_path_arg = (
             self.get_parameter("ckpt_path").get_parameter_value().string_value
@@ -230,12 +237,23 @@ class FlowInferenceNode(Node):
             off_toggle = (
                 joy_msg.buttons[1] == 1.0
             )  # B button for xbox, Circle button for ps4
+            episode_toggle = joy_msg.buttons[6] == 1.0  # Options ps4
 
             # self.get_logger().info(f"On Toggle: {on_toggle}, Off Toggle: {off_toggle}")
 
             if on_toggle:
                 self.user_takeover = True
                 self.get_logger().info("User Takeover Activated")
+                return
+            elif episode_toggle:
+                # So that we can still give control back when doing single takeover, we reset here at start/end of episode.
+                self.user_takeover = False
+                self.action_buffer = []
+                self.action_history = collections.deque(maxlen=HISTORY_LENGTH)
+                self.jnt_states_deque.clear()
+                self.gripper_deque.clear()
+                self.cart_states_deque.clear()
+                self.pcd_deque.clear()
                 return
             elif (
                 self.user_takeover
@@ -397,7 +415,7 @@ class FlowInferenceNode(Node):
                 gripper_msg = GripperGrasp()
                 gripper_msg.width = 0.0
                 gripper_msg.speed = 0.1
-                gripper_msg.force = 5.0
+                gripper_msg.force = 10.0
                 gripper_msg.epsilon_inner = 0.8
                 gripper_msg.epsilon_outer = 0.8
                 self.pub_gripper.publish(gripper_msg)
