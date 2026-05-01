@@ -1,17 +1,17 @@
 services:
-  intervention-learning:
-    image: intervention-learning:${USER}
+  pi_inference:
+    image: pi_inference:${USER}
     build:
       context: .
       dockerfile: Dockerfile.cuda
-    container_name: intervention-learning-${USER}
+    container_name: pi_inference-${USER}
     network_mode: "host"
     privileged: true
     command: /bin/bash
     tty: true
     stdin_open: true
     volumes:
-      - ../CMPUT654-Intervention-Learning:/home/user/intervention-learning
+      - ../fr3_pi_inference:/home/user/pi_inference
       - /tmp/.X11-unix:/tmp/.X11-unix
       - /etc/udev/rules.d:/etc/udev/rules.d
     environment:
