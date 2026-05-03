@@ -63,10 +63,10 @@ def main(args=None):
     # tester.join_motion_pub.publish(Empty())  # Start joint motion mode
     # tester.send_joint_position([0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785])
     # tester.send_joint_position([0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0])
-    # tester.send_joint_velocity([0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    tester.send_joint_velocity([0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     # time.sleep(3.0)
     # tester.send_joint_velocity([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-    tester.send_gripper_move(0.08)  # Open halfway
+    # tester.send_gripper_move(0.08)  # Open halfway
 
     # Keep alive briefly to ensure message delivery
     time.sleep(1.0)

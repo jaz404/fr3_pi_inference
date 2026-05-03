@@ -29,7 +29,7 @@ class UdpToFrankyRos(Node):
         self.declare_parameter("listen_ip", "0.0.0.0")
         self.declare_parameter("listen_port", 9090)
 
-        self.declare_parameter("state_dst_ip", "10.1.38.195")
+        self.declare_parameter("state_dst_ip", "192.168.1.161") # using ip addr
         self.declare_parameter("state_dst_port", 9091)
         self.declare_parameter("state_rate_hz", 50.0)
 
