@@ -29,6 +29,7 @@ setup(
             "franky_xbox = franky_ros.franky_xbox_control:main",
             "franky_ps4 = franky_ros.franky_ps4_control:main",
             "home = franky_ros.home:main",
+            "udp_to_franky_ros =  udp_to_franky_ros:main",
         ],
     },
 )
